@@ -41,22 +41,29 @@ export default function CameraModal({ onClose }: Props) {
       return
     }
 
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' }, // リアカメラ優先
-        audio: false,
-      })
-      streamRef.current = stream
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        // iOS Safari では play() を明示的に呼ぶ必要がある
-        await videoRef.current.play()
+    // まず前面カメラ（user）を試み、失敗したら制約なし（video: true）でフォールバック
+    const constraints: MediaStreamConstraints[] = [
+      { video: { facingMode: 'user' }, audio: false },  // 前面カメラ優先（iPad向け）
+      { video: true, audio: false },                     // フォールバック
+    ]
+
+    let stream: MediaStream | null = null
+    let lastError: DOMException | null = null
+
+    for (const constraint of constraints) {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(constraint)
+        console.log('[camera] camera started with constraint:', JSON.stringify(constraint))
+        break
+      } catch (err) {
+        lastError = err as DOMException
+        console.warn('[camera] getUserMedia failed:', lastError.name, '/ retrying with next constraint...')
       }
-      setIsRunning(true)
-      console.log('[camera] camera started successfully')
-    } catch (err) {
-      const e = err as DOMException
-      console.error('[camera] getUserMedia error:', e.name, e.message)
+    }
+
+    if (!stream) {
+      const e = lastError!
+      console.error('[camera] all constraints failed:', e.name, e.message)
       if (e.name === 'NotAllowedError') {
         setError('カメラの使用が拒否されました。\nブラウザの設定でカメラのアクセスを許可してください。')
       } else if (e.name === 'NotFoundError') {
@@ -66,6 +73,21 @@ export default function CameraModal({ onClose }: Props) {
       } else {
         setError(`カメラの起動に失敗しました。\n(${e.name}: ${e.message})`)
       }
+      return
+    }
+
+    try {
+      streamRef.current = stream
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        // iOS Safari では play() を明示的に呼ぶ必要がある
+        await videoRef.current.play()
+      }
+      setIsRunning(true)
+    } catch (err) {
+      const e = err as DOMException
+      console.error('[camera] video.play() failed:', e.name, e.message)
+      setError(`映像の再生に失敗しました。\n(${e.name}: ${e.message})`)
     }
   }
 
