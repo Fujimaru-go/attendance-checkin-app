@@ -31,14 +31,15 @@ export default function Home() {
 
   // QR読み取り後に呼ばれる。student_id を受け取り students テーブルを照会する
   const handleScan = async (value: string) => {
-    const trimmed = value.trim()
+    // trim → 先頭末尾の " を除去（QRコードがダブルクォーテーションで囲まれているケース対策）
+    const trimmed = value.trim().replace(/^"+|"+$/g, '')
 
-    console.log('[debug] QR raw value   :', JSON.stringify(value))
-    console.log('[debug] QR trimmed     :', JSON.stringify(trimmed))
-    console.log('[debug] students query id:', trimmed)
+    console.log('[debug] QR raw value      :', JSON.stringify(value))
+    console.log('[debug] QR normalized     :', JSON.stringify(trimmed))
+    console.log('[debug] students query id :', trimmed)
 
     setRawQr(value)
-    setScannedId(trimmed)   // trim 済みの値を student_id として使う
+    setScannedId(trimmed)   // 正規化済みの値を student_id として使う
     setStatus(null)
     setStudent(null)
     setStudentNotFound(false)
@@ -247,7 +248,7 @@ export default function Home() {
         )}
 
         {/* バージョン */}
-        <p className="text-xs text-black text-right">ver_0.0.1</p>
+        <p className="text-xs text-black text-right">ver_0.0.2</p>
 
         {/* ステータスメッセージ */}
         {status && (
