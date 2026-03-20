@@ -168,6 +168,9 @@ export default function Home() {
           </button>
         </div>
 
+        {/* バージョン */}
+        <p className="text-xs text-black text-right">ver_0.0.1</p>
+
         {/* ステータスメッセージ */}
         {status && (
           <div
