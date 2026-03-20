@@ -25,6 +25,7 @@ export default function Home() {
   const [loading, setLoading] = useState<'checkin' | 'checkout' | null>(null)
   const [scannedId, setScannedId] = useState<string | null>(null)
   const [rawQr, setRawQr] = useState<string | null>(null)       // trim 前の生の値
+  const [qrError, setQrError] = useState<string | null>(null)  // Supabase エラー詳細
   const [student, setStudent] = useState<Student | null>(null)
   const [studentNotFound, setStudentNotFound] = useState(false)
   const [showCamera, setShowCamera] = useState(false)
@@ -34,12 +35,21 @@ export default function Home() {
     // trim → 先頭末尾の " を除去（QRコードがダブルクォーテーションで囲まれているケース対策）
     const trimmed = value.trim().replace(/^"+|"+$/g, '')
 
+    // 先頭・末尾5文字の文字コード（不可視文字の検出用）
+    const charCodes = (s: string) =>
+      [...s].map((c) => `U+${c.charCodeAt(0).toString(16).padStart(4, '0')}`).join(' ')
+
     console.log('[debug] QR raw value      :', JSON.stringify(value))
+    console.log('[debug] QR raw length     :', value.length)
     console.log('[debug] QR normalized     :', JSON.stringify(trimmed))
+    console.log('[debug] QR normalized len :', trimmed.length)
+    console.log('[debug] char codes (head) :', charCodes(trimmed.slice(0, 5)))
+    console.log('[debug] char codes (tail) :', charCodes(trimmed.slice(-5)))
     console.log('[debug] students query id :', trimmed)
 
     setRawQr(value)
-    setScannedId(trimmed)   // 正規化済みの値を student_id として使う
+    setScannedId(trimmed)
+    setQrError(null)
     setStatus(null)
     setStudent(null)
     setStudentNotFound(false)
@@ -51,7 +61,9 @@ export default function Home() {
       .single()
 
     if (error || !data) {
-      console.warn('[debug] student not found for id:', value)
+      const errMsg = error ? `code=${error.code} / ${error.message}` : 'data=null'
+      console.warn('[debug] student not found. error:', errMsg)
+      setQrError(errMsg)
       setStudentNotFound(true)
     } else {
       console.log('[debug] student found:', data)
@@ -67,6 +79,7 @@ export default function Home() {
   const handleReset = () => {
     setScannedId(null)
     setRawQr(null)
+    setQrError(null)
     setStudent(null)
     setStudentNotFound(false)
     setStatus(null)
@@ -243,7 +256,12 @@ export default function Home() {
         {rawQr !== null && (
           <div className="rounded-lg bg-gray-100 border border-gray-300 px-4 py-3 text-xs text-gray-600 font-mono space-y-1 break-all">
             <p><span className="font-bold text-gray-800">raw QR value:</span> {JSON.stringify(rawQr)}</p>
+            <p><span className="font-bold text-gray-800">raw length:</span> {rawQr.length}</p>
             <p><span className="font-bold text-gray-800">normalized student_id:</span> {JSON.stringify(scannedId)}</p>
+            <p><span className="font-bold text-gray-800">normalized length:</span> {scannedId?.length ?? 0}</p>
+            {qrError && (
+              <p className="text-red-600"><span className="font-bold">supabase error:</span> {qrError}</p>
+            )}
           </div>
         )}
 
