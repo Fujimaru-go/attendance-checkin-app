@@ -24,14 +24,21 @@ export default function Home() {
   const [status, setStatus] = useState<Status>(null)
   const [loading, setLoading] = useState<'checkin' | 'checkout' | null>(null)
   const [scannedId, setScannedId] = useState<string | null>(null)
+  const [rawQr, setRawQr] = useState<string | null>(null)       // trim 前の生の値
   const [student, setStudent] = useState<Student | null>(null)
   const [studentNotFound, setStudentNotFound] = useState(false)
   const [showCamera, setShowCamera] = useState(false)
 
   // QR読み取り後に呼ばれる。student_id を受け取り students テーブルを照会する
   const handleScan = async (value: string) => {
-    console.log('[debug] QR scanned, student_id:', value)
-    setScannedId(value)
+    const trimmed = value.trim()
+
+    console.log('[debug] QR raw value   :', JSON.stringify(value))
+    console.log('[debug] QR trimmed     :', JSON.stringify(trimmed))
+    console.log('[debug] students query id:', trimmed)
+
+    setRawQr(value)
+    setScannedId(trimmed)   // trim 済みの値を student_id として使う
     setStatus(null)
     setStudent(null)
     setStudentNotFound(false)
@@ -39,7 +46,7 @@ export default function Home() {
     const { data, error } = await supabase
       .from('students')
       .select('name, class_name')
-      .eq('id', value)
+      .eq('id', trimmed)
       .single()
 
     if (error || !data) {
@@ -58,6 +65,7 @@ export default function Home() {
 
   const handleReset = () => {
     setScannedId(null)
+    setRawQr(null)
     setStudent(null)
     setStudentNotFound(false)
     setStatus(null)
@@ -229,6 +237,14 @@ export default function Home() {
             {loading === 'checkout' ? '記録中…' : 'かえる！'}
           </button>
         </div>
+
+        {/* QRデバッグ表示 */}
+        {rawQr !== null && (
+          <div className="rounded-lg bg-gray-100 border border-gray-300 px-4 py-3 text-xs text-gray-600 font-mono space-y-1 break-all">
+            <p><span className="font-bold text-gray-800">raw QR value:</span> {JSON.stringify(rawQr)}</p>
+            <p><span className="font-bold text-gray-800">normalized student_id:</span> {JSON.stringify(scannedId)}</p>
+          </div>
+        )}
 
         {/* バージョン */}
         <p className="text-xs text-black text-right">ver_0.0.1</p>
