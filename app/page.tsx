@@ -5,8 +5,6 @@ import { Camera, CheckCircle2, Lock } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import CameraModal from '@/components/CameraModal'
 
-const FALLBACK_STUDENT_ID = '123a6d33-c1d4-4a29-919a-f016467d00a5'
-
 /** timestamptz として返される ISO 8601 文字列を日本時間で整形する */
 function formatJST(timestamptz: string): string {
   // タイムゾーン情報がない場合は UTC として扱う（Supabase が '+00:00' や 'Z' を省略するケース対策）
@@ -17,30 +15,69 @@ function formatJST(timestamptz: string): string {
   return new Date(normalized).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })
 }
 
-type Status = { type: 'success' | 'error'; message: string } | null
+type StatusType = 'success' | 'error' | 'warn'
+type Status = { type: StatusType; message: string } | null
+
+type Student = { name: string; class_name: string }
 
 export default function Home() {
   const [status, setStatus] = useState<Status>(null)
   const [loading, setLoading] = useState<'checkin' | 'checkout' | null>(null)
   const [scannedId, setScannedId] = useState<string | null>(null)
+  const [student, setStudent] = useState<Student | null>(null)
+  const [studentNotFound, setStudentNotFound] = useState(false)
   const [showCamera, setShowCamera] = useState(false)
 
-  const studentId = scannedId ?? FALLBACK_STUDENT_ID
+  // QR読み取り後に呼ばれる。student_id を受け取り students テーブルを照会する
+  const handleScan = async (value: string) => {
+    console.log('[debug] QR scanned, student_id:', value)
+    setScannedId(value)
+    setStatus(null)
+    setStudent(null)
+    setStudentNotFound(false)
+
+    const { data, error } = await supabase
+      .from('students')
+      .select('name, class_name')
+      .eq('id', value)
+      .single()
+
+    if (error || !data) {
+      console.warn('[debug] student not found for id:', value)
+      setStudentNotFound(true)
+    } else {
+      console.log('[debug] student found:', data)
+      setStudent(data)
+    }
+  }
 
   const handleCameraOpen = () => {
     console.log('[debug] カメラを起動 tapped')
     setShowCamera(true)
   }
 
+  const handleReset = () => {
+    setScannedId(null)
+    setStudent(null)
+    setStudentNotFound(false)
+    setStatus(null)
+  }
+
   const handleCheckin = async () => {
-    console.log('[debug] きたよ！ tapped, studentId:', studentId)
+    console.log('[debug] きたよ！ tapped, scannedId:', scannedId)
     if (loading !== null) return
+
+    if (!scannedId) {
+      setStatus({ type: 'warn', message: '先にQRコードを読み取ってください' })
+      return
+    }
+
     setLoading('checkin')
     setStatus(null)
 
     const { data, error } = await supabase
       .from('attendance_logs')
-      .insert({ student_id: studentId, type: 'checkin' })
+      .insert({ student_id: scannedId, type: 'checkin' })
       .select('created_at')
       .single()
 
@@ -56,14 +93,20 @@ export default function Home() {
   }
 
   const handleCheckout = async () => {
-    console.log('[debug] かえる！ tapped, studentId:', studentId)
+    console.log('[debug] かえる！ tapped, scannedId:', scannedId)
     if (loading !== null) return
+
+    if (!scannedId) {
+      setStatus({ type: 'warn', message: '先にQRコードを読み取ってください' })
+      return
+    }
+
     setLoading('checkout')
     setStatus(null)
 
     const { data, error } = await supabase
       .from('attendance_logs')
-      .insert({ student_id: studentId, type: 'checkout' })
+      .insert({ student_id: scannedId, type: 'checkout' })
       .select('created_at')
       .single()
 
@@ -80,33 +123,52 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gray-200 flex items-center justify-center p-4">
-      <div
-        className="
-          w-[90vw] max-w-2xl bg-gray-50 rounded-3xl shadow-xl
-          p-8 sm:p-12
-          flex flex-col gap-6
-        "
-      >
+      <div className="w-[90vw] max-w-2xl bg-gray-50 rounded-3xl shadow-xl p-8 sm:p-12 flex flex-col gap-6">
+
         {/* タイトル */}
         <h1 className="text-3xl sm:text-4xl font-extrabold text-gray-700 text-center tracking-wide">
           登室・退室記録アプリ
         </h1>
 
-        {/* スキャン済みID表示 */}
-        {scannedId && (
-          <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-xl px-5 py-3">
-            <span className="text-base text-blue-700 font-medium truncate">
-              QR読取済: {scannedId}
-            </span>
-            <button
-              type="button"
-              onClick={() => { setScannedId(null); setStatus(null) }}
-              className="ml-3 text-blue-400 hover:text-blue-600 text-sm font-bold shrink-0 cursor-pointer [touch-action:manipulation]"
-            >
-              リセット
-            </button>
+        {/* 生徒情報 / QR未読取表示 */}
+        {scannedId ? (
+          <div className={`rounded-xl px-5 py-4 border ${
+            studentNotFound
+              ? 'bg-red-50 border-red-200'
+              : student
+              ? 'bg-green-50 border-green-200'
+              : 'bg-blue-50 border-blue-200'
+          }`}>
+            {studentNotFound ? (
+              <div className="flex items-center justify-between">
+                <p className="text-red-600 font-bold text-base">未登録のQRコードです</p>
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  className="ml-3 text-red-400 hover:text-red-600 text-sm font-bold shrink-0 cursor-pointer [touch-action:manipulation]"
+                >
+                  リセット
+                </button>
+              </div>
+            ) : student ? (
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-green-700 font-extrabold text-xl">{student.name}</p>
+                  <p className="text-green-600 text-sm mt-0.5">{student.class_name}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  className="ml-3 text-green-400 hover:text-green-600 text-sm font-bold shrink-0 cursor-pointer [touch-action:manipulation]"
+                >
+                  リセット
+                </button>
+              </div>
+            ) : (
+              <p className="text-blue-600 text-sm">生徒情報を取得中…</p>
+            )}
           </div>
-        )}
+        ) : null}
 
         {/* カメラボタン */}
         <button
@@ -173,13 +235,11 @@ export default function Home() {
 
         {/* ステータスメッセージ */}
         {status && (
-          <div
-            className={`text-center text-lg font-bold py-4 rounded-2xl ${
-              status.type === 'success'
-                ? 'bg-green-100 text-green-700'
-                : 'bg-red-100 text-red-600'
-            }`}
-          >
+          <div className={`text-center text-lg font-bold py-4 rounded-2xl ${
+            status.type === 'success' ? 'bg-green-100 text-green-700' :
+            status.type === 'warn'    ? 'bg-yellow-100 text-yellow-700' :
+                                        'bg-red-100 text-red-600'
+          }`}>
             {status.message}
           </div>
         )}
@@ -187,7 +247,10 @@ export default function Home() {
 
       {/* カメラモーダル */}
       {showCamera && (
-        <CameraModal onClose={() => setShowCamera(false)} />
+        <CameraModal
+          onScan={handleScan}
+          onClose={() => setShowCamera(false)}
+        />
       )}
     </div>
   )
