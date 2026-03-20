@@ -15,6 +15,47 @@ function formatJST(timestamptz: string): string {
   return new Date(normalized).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })
 }
 
+/**
+ * Web Audio API で「ピコーン」系の成功音を鳴らす。
+ * iPad/Safari はユーザー操作後であれば AudioContext が使用可能。
+ */
+function playSuccessSound() {
+  try {
+    const AudioCtx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+    const ctx = new AudioCtx()
+    const now = ctx.currentTime
+
+    // 1音目: 880Hz (A5) — 短く立ち上げてフェードアウト
+    const osc1 = ctx.createOscillator()
+    const gain1 = ctx.createGain()
+    osc1.connect(gain1)
+    gain1.connect(ctx.destination)
+    osc1.type = 'sine'
+    osc1.frequency.value = 880
+    gain1.gain.setValueAtTime(0.25, now)
+    gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.12)
+    osc1.start(now)
+    osc1.stop(now + 0.12)
+
+    // 2音目: 1320Hz (E6) — 少し遅れて鳴らしてピコーン感を演出
+    const osc2 = ctx.createOscillator()
+    const gain2 = ctx.createGain()
+    osc2.connect(gain2)
+    gain2.connect(ctx.destination)
+    osc2.type = 'sine'
+    osc2.frequency.value = 1320
+    gain2.gain.setValueAtTime(0.001, now + 0.08)
+    gain2.gain.linearRampToValueAtTime(0.2, now + 0.10)
+    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.28)
+    osc2.start(now + 0.08)
+    osc2.stop(now + 0.28)
+
+    console.log('[sound] success sound played')
+  } catch (e) {
+    console.warn('[sound] failed to play sound:', e)
+  }
+}
+
 type StatusType = 'success' | 'error' | 'warn'
 type Status = { type: StatusType; message: string } | null
 
@@ -27,6 +68,18 @@ export default function Home() {
   const [student, setStudent] = useState<Student | null>(null)
   const [studentNotFound, setStudentNotFound] = useState(false)
   const [showCamera, setShowCamera] = useState(false)
+
+  /** 記録成功後に呼ぶ。音を鳴らし、500ms 後に全状態をリセットする */
+  const handleRecordSuccess = (jst: string) => {
+    playSuccessSound()
+    setStatus({ type: 'success', message: `記録しました（${jst}）` })
+    setTimeout(() => {
+      setScannedId(null)
+      setStudent(null)
+      setStudentNotFound(false)
+      setStatus(null)
+    }, 500)
+  }
 
   // QR読み取り後に呼ばれる。student_id を受け取り students テーブルを照会する
   const handleScan = async (value: string) => {
@@ -56,8 +109,8 @@ export default function Home() {
     } else {
       console.log('[qr] student found:', data)
       setStudent(data)
-      // 照合成功時のみ 0.5秒後にカメラモーダルを閉じる
-      setTimeout(() => setShowCamera(false), 500)
+      // 照合成功時のみ 300ms 後にカメラモーダルを閉じる
+      setTimeout(() => setShowCamera(false), 300)
     }
   }
 
@@ -95,9 +148,8 @@ export default function Home() {
       console.error('[debug] checkin error:', error)
       setStatus({ type: 'error', message: error.message })
     } else {
-      const jst = formatJST(data.created_at)
       console.log('[debug] checkin success, created_at:', data.created_at)
-      setStatus({ type: 'success', message: `記録しました（${jst}）` })
+      handleRecordSuccess(formatJST(data.created_at))
     }
     setLoading(null)
   }
@@ -124,9 +176,8 @@ export default function Home() {
       console.error('[debug] checkout error:', error)
       setStatus({ type: 'error', message: error.message })
     } else {
-      const jst = formatJST(data.created_at)
       console.log('[debug] checkout success, created_at:', data.created_at)
-      setStatus({ type: 'success', message: `記録しました（${jst}）` })
+      handleRecordSuccess(formatJST(data.created_at))
     }
     setLoading(null)
   }
